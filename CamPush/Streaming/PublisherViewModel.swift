@@ -73,11 +73,11 @@ final class PublisherViewModel: ObservableObject {
 
     private final class ActivePublish {
         let mixer: MediaMixer
-        let session: any StreamSession
+        let session: any Session
         let sourceID: String
         var readyTask: Task<Void, Never>?
 
-        init(mixer: MediaMixer, session: any StreamSession, sourceID: String) {
+        init(mixer: MediaMixer, session: any Session, sourceID: String) {
             self.mixer = mixer
             self.session = session
             self.sourceID = sourceID
@@ -86,7 +86,8 @@ final class PublisherViewModel: ObservableObject {
         func shutdown() async {
             readyTask?.cancel()
             try? await session.close()
-            await mixer.removeOutput(session.stream)
+            let stream = await session.stream
+            await mixer.removeOutput(stream)
             await mixer.stopRunning()
             try? await mixer.attachAudio(nil)
             try? await mixer.attachVideo(nil, track: 0)
@@ -428,10 +429,14 @@ final class PublisherViewModel: ObservableObject {
             }
             await mixer.startRunning()
 
-            let session = try await StreamSessionBuilderFactory.shared.make(whipURL)
-                .setMode(.publish)
+            guard let session = try await SessionBuilderFactory.shared.make(whipURL)
+                .setMethod(.ingest)
                 .build()
-            await mixer.addOutput(session.stream)
+            else {
+                throw NSError(domain: "CamPush", code: 5001, userInfo: [NSLocalizedDescriptionKey: "session build failed"])
+            }
+            let stream = await session.stream
+            await mixer.addOutput(stream)
 
             let active = ActivePublish(mixer: mixer, session: session, sourceID: sourceID)
             active.readyTask = Task { [weak self] in
@@ -551,7 +556,7 @@ final class PublisherViewModel: ObservableObject {
 
     private func registerFactoriesIfNeeded() async {
         if factoryRegistered { return }
-        await StreamSessionBuilderFactory.shared.register(HTTPSessionFactory())
+        await SessionBuilderFactory.shared.register(HTTPSessionFactory())
         factoryRegistered = true
     }
 
