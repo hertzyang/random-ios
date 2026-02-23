@@ -1,0 +1,54 @@
+name: ios-unsigned-ipa
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build unsigned xcarchive
+        run: |
+          set -o pipefail
+          mkdir -p build
+          if ! xcodebuild \
+            -project CamPush.xcodeproj \
+            -scheme CamPush \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            archive -archivePath build/CamPush.xcarchive | tee build/xcodebuild.log; then
+            msg="$(tail -n 40 build/xcodebuild.log | tr '\n' ' ' | sed 's/\"/\\\"/g')"
+            echo "::error::xcodebuild failed: ${msg}"
+            exit 74
+          fi
+
+      - name: Pack unsigned ipa
+        run: |
+          mkdir -p build/Payload
+          cp -R build/CamPush.xcarchive/Products/Applications/CamPush.app build/Payload/
+          (cd build && zip -r app-unsigned.ipa Payload)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cam-push-unsigned-ipa
+          path: build/app-unsigned.ipa
+          if-no-files-found: error

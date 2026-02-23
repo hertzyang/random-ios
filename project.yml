@@ -1,0 +1,35 @@
+name: CamPush
+options:
+  minimumXcodeGenVersion: 2.38.0
+  deploymentTarget:
+    iOS: '16.0'
+
+packages:
+  HaishinKit:
+    url: https://github.com/HaishinKit/HaishinKit.swift.git
+    from: 1.9.0
+
+targets:
+  CamPush:
+    type: application
+    platform: iOS
+    deploymentTarget: '16.0'
+    sources:
+      - path: CamPush
+    info:
+      path: CamPush/Info.plist
+      properties:
+        CFBundleDisplayName: CamPush
+        UILaunchScreen: {}
+        NSCameraUsageDescription: Camera access is required for publishing.
+        NSMicrophoneUsageDescription: Microphone access is required for publishing.
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: page.hertz.campush
+        PRODUCT_NAME: CamPush
+        SWIFT_VERSION: 5.10
+        TARGETED_DEVICE_FAMILY: '1,2'
+        IPHONEOS_DEPLOYMENT_TARGET: '16.0'
+    dependencies:
+      - package: HaishinKit
