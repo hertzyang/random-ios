@@ -5,24 +5,31 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 12) {
-                TextField("RTMP URL", text: $vm.rtmpURL)
+            VStack(spacing: 10) {
+                TextField("Push Base URL", text: $vm.baseURL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
                     .textFieldStyle(.roundedBorder)
 
-                HStack(spacing: 10) {
-                    Button("Refresh Devices") {
-                        Task { await vm.reloadDevices() }
+                TextField("Display Name", text: $vm.displayName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .textFieldStyle(.roundedBorder)
+
+                HStack(spacing: 8) {
+                    Button(vm.publisherActive ? "Stop Publisher" : "Start Publisher") {
+                        Task { await vm.togglePublisher() }
                     }
-                    .buttonStyle(.bordered)
-
+                    .buttonStyle(.borderedProminent)
+                    Button("Refresh Devices") {
+                        Task { await vm.reloadDevices(forceSync: true) }
+                    }.buttonStyle(.bordered)
                     Spacer()
-
-                    Text(vm.summary)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                 }
+                Text(vm.publisherStatus)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 List {
                     ForEach($vm.sources) { $source in
@@ -31,43 +38,40 @@ struct ContentView: View {
                                 Text(source.kind == .video ? "[CAM]" : "[MIC]")
                                     .font(.caption.monospaced())
                                 Text(source.label)
-                                    .font(.headline)
+                                    .font(.subheadline)
                                 Spacer()
+                                Toggle("", isOn: $source.enabled)
+                                    .labelsHidden()
+                                    .onChange(of: source.enabled) { _ in
+                                        Task { await vm.sourceToggled(sourceID: source.id) }
+                                    }
                                 Text(source.isPublishing ? "LIVE" : "IDLE")
                                     .font(.caption)
                                     .foregroundStyle(source.isPublishing ? .green : .secondary)
                             }
 
-                            TextField("Stream ID", text: $source.streamID)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled(true)
-                                .textFieldStyle(.roundedBorder)
+                            Text("name=\(source.name) stream=\(source.streamID.isEmpty ? "-" : source.streamID)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
 
-                            HStack {
-                                Button(source.isPublishing ? "Stop" : "Start") {
-                                    Task {
-                                        await vm.togglePublish(sourceID: source.id)
-                                    }
-                                }
-                                .buttonStyle(.borderedProminent)
-
-                                Spacer()
-
-                                Text(source.status)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                            Text(source.status)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                         .padding(.vertical, 6)
                     }
                 }
                 .listStyle(.plain)
+                Text(vm.summary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding()
             .navigationTitle("Cam Push")
         }
         .task {
-            await vm.reloadDevices()
+            await vm.bootstrap()
         }
     }
 }
