@@ -396,11 +396,23 @@ final class PublisherViewModel: ObservableObject {
     private func handleControlCommand(_ cmd: ControlCommand) async {
         guard !cmd.stream_id.isEmpty else { return }
         if cmd.action == "start" {
-            let path = cmd.path ?? ""
+            let path = resolvedPath(for: cmd.stream_id, commandPath: cmd.path)
             await startPublish(streamID: cmd.stream_id, streamPath: path)
         } else if cmd.action == "stop" {
             await stopPublish(streamID: cmd.stream_id)
         }
+    }
+
+    private func resolvedPath(for streamID: String, commandPath: String?) -> String {
+        let trimmed = commandPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmed.isEmpty {
+            return trimmed
+        }
+        guard let sourceID = streamToSourceID[streamID],
+              let idx = sources.firstIndex(where: { $0.id == sourceID }) else {
+            return ""
+        }
+        return sources[idx].path.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func startPublish(streamID: String, streamPath: String) async {
@@ -417,10 +429,20 @@ final class PublisherViewModel: ObservableObject {
             sources[idx].status = "device unavailable"
             return
         }
+        let publishPath = streamPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !publishPath.isEmpty else {
+            sources[idx].status = "missing publish path"
+            return
+        }
+        if source.kind == .video && hasAnotherLiveVideo(excludingStreamID: streamID) && !AVCaptureMultiCamSession.isMultiCamSupported {
+            sources[idx].status = "device does not support multi-cam"
+            await postPublisherState(streamID: streamID, state: "idle")
+            return
+        }
 
         do {
-            let whipURL = try makeWHIPURL(path: streamPath, token: publisherToken)
-            let mixer = MediaMixer(captureSessionMode: .single)
+            let whipURL = try makeWHIPURL(path: publishPath, token: publisherToken)
+            let mixer = MediaMixer(captureSessionMode: source.kind == .video ? .multi : .single)
 
             if source.kind == .audio {
                 try await mixer.attachAudio(device)
@@ -452,12 +474,20 @@ final class PublisherViewModel: ObservableObject {
                                 self.updateSummary()
                             }
                         }
+                    } else if rs == .closed {
+                        await MainActor.run {
+                            if let j = self.sources.firstIndex(where: { $0.id == sourceID }) {
+                                self.sources[j].isPublishing = false
+                                self.sources[j].status = self.sources[j].enabled ? "waiting viewer" : "disabled"
+                                self.updateSummary()
+                            }
+                        }
                     }
                 }
             }
 
             activePublishes[streamID] = active
-            sources[idx].isPublishing = true
+            sources[idx].isPublishing = false
             sources[idx].status = "starting"
             updateSummary()
             await postPublisherState(streamID: streamID, state: "starting")
@@ -474,6 +504,19 @@ final class PublisherViewModel: ObservableObject {
             await postPublisherState(streamID: streamID, state: "idle")
             updateSummary()
         }
+    }
+
+    private func hasAnotherLiveVideo(excludingStreamID: String) -> Bool {
+        for (sid, active) in activePublishes {
+            if sid == excludingStreamID {
+                continue
+            }
+            if let idx = sources.firstIndex(where: { $0.id == active.sourceID }),
+               sources[idx].kind == .video {
+                return true
+            }
+        }
+        return false
     }
 
     private func stopPublish(streamID: String) async {
