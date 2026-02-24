@@ -8,12 +8,15 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-14
     timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
 
       - name: Extract iOS source archive
         run: |
@@ -34,8 +37,10 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             archive -archivePath build/Hertziness.xcarchive | tee build/xcodebuild.log; then
-            msg="$(tail -n 40 build/xcodebuild.log | tr '\n' ' ' | sed 's/\"/\\\"/g')"
-            echo "::error::xcodebuild failed: ${msg}"
+            echo "=== xcodebuild failed, last 200 log lines ==="
+            tail -n 200 build/xcodebuild.log || true
+            echo "=== extracted error lines ==="
+            grep -n "error:" build/xcodebuild.log | tail -n 80 || true
             exit 74
           fi
 
@@ -57,3 +62,11 @@ jobs:
           name: voice-hertz-unsigned-ipa
           path: build/voice-hertz-unsigned.ipa
           if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: build/xcodebuild.log
+          if-no-files-found: ignore
